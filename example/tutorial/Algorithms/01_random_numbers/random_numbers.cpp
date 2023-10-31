@@ -19,8 +19,17 @@
 #include <Kokkos_DualView.hpp>
 #include <Kokkos_Timer.hpp>
 #include <cstdlib>
+#include <iostream>
 
-using DefaultHostType = Kokkos::HostSpace::execution_space;
+// cuda
+using DeviceType = Kokkos::Device<Kokkos::Cuda,Kokkos::CudaSpace>;
+using ViewType = Kokkos::View<double**, DeviceType>;
+using ExecutionSpace = Kokkos::Cuda;
+
+// openmp
+// using DeviceType = Kokkos::Device<Kokkos::OpenMP,Kokkos::HostSpace>;
+// using ViewType = Kokkos::View<double**, DeviceType>;
+// using ExecutionSpace = Kokkos::OpenMP;
 
 // Kokkos provides two different random number generators with a 64 bit and a
 // 1024 bit state. These generators are based on Vigna, Sebastiano (2014). "An
@@ -46,7 +55,7 @@ using DefaultHostType = Kokkos::HostSpace::execution_space;
 template <class GeneratorPool>
 struct generate_random {
   // Output View for the random numbers
-  Kokkos::View<uint64_t**> vals;
+  ViewType vals;
 
   // The GeneratorPool
   GeneratorPool rand_pool;
@@ -54,7 +63,7 @@ struct generate_random {
   int samples;
 
   // Initialize all members
-  generate_random(Kokkos::View<uint64_t**> vals_, GeneratorPool rand_pool_,
+  generate_random(ViewType vals_, GeneratorPool rand_pool_,
                   int samples_)
       : vals(vals_), rand_pool(rand_pool_), samples(samples_) {}
 
@@ -66,7 +75,7 @@ struct generate_random {
     // Draw samples numbers from the pool as urand64 between 0 and
     // rand_pool.MAX_URAND64 Note there are function calls to get other type of
     // scalars, and also to specify Ranges or get a normal distributed float.
-    for (int k = 0; k < samples; k++) vals(i, k) = rand_gen.urand64();
+    for (int k = 0; k < samples; k++) vals(i, k) = rand_gen.normal();
 
     // Give the state back, which will allow another thread to acquire it
     rand_pool.free_state(rand_gen);
@@ -78,6 +87,8 @@ int main(int argc, char* args[]) {
   if (argc != 3) {
     printf("Please pass two integers on the command line\n");
   } else {
+    std::cout<<"Exec space: "<<ExecutionSpace{}.name() <<std::endl;
+
     // Initialize Kokkos
     int size    = std::stoi(args[1]);
     int samples = std::stoi(args[2]);
@@ -86,42 +97,44 @@ int main(int argc, char* args[]) {
     // 1024 bit states Both take an 64 bit unsigned integer seed to initialize a
     // Random_XorShift64 generator which is used to fill the generators of the
     // pool.
-    Kokkos::Random_XorShift64_Pool<> rand_pool64(5374857);
-    Kokkos::Random_XorShift1024_Pool<> rand_pool1024(5374857);
-    Kokkos::DualView<uint64_t**> vals("Vals", size, samples);
+    Kokkos::Random_XorShift64_Pool<ExecutionSpace> rand_pool64(5374857);
+    Kokkos::Random_XorShift1024_Pool<ExecutionSpace> rand_pool1024(5374857);
+    ViewType vals("Vals", size, samples);
+    auto policy = Kokkos::RangePolicy<ExecutionSpace>(0, size);
 
     // Run some performance comparisons
     Kokkos::Timer timer;
-    Kokkos::parallel_for(size,
-                         generate_random<Kokkos::Random_XorShift64_Pool<> >(
-                             vals.d_view, rand_pool64, samples));
-    Kokkos::fence();
+    for(int i=0;i<5;i++){
+      Kokkos::parallel_for(policy,
+                         generate_random<Kokkos::Random_XorShift64_Pool<ExecutionSpace> >(
+                             vals, rand_pool64, samples));
+      Kokkos::fence();
+    }
 
     timer.reset();
-    Kokkos::parallel_for(size,
-                         generate_random<Kokkos::Random_XorShift64_Pool<> >(
-                             vals.d_view, rand_pool64, samples));
+    Kokkos::parallel_for(policy,
+                         generate_random<Kokkos::Random_XorShift64_Pool<ExecutionSpace> >(
+                             vals, rand_pool64, samples));
     Kokkos::fence();
     double time_64 = timer.seconds();
 
-    Kokkos::parallel_for(size,
-                         generate_random<Kokkos::Random_XorShift1024_Pool<> >(
-                             vals.d_view, rand_pool1024, samples));
+
+    Kokkos::parallel_for(policy,
+                         generate_random<Kokkos::Random_XorShift1024_Pool<ExecutionSpace> >(
+                             vals, rand_pool1024, samples));
     Kokkos::fence();
 
     timer.reset();
-    Kokkos::parallel_for(size,
-                         generate_random<Kokkos::Random_XorShift1024_Pool<> >(
-                             vals.d_view, rand_pool1024, samples));
+    Kokkos::parallel_for(policy,
+                         generate_random<Kokkos::Random_XorShift1024_Pool<ExecutionSpace> >(
+                             vals, rand_pool1024, samples));
     Kokkos::fence();
     double time_1024 = timer.seconds();
 
-    printf("#Time XorShift64*:   %e %e\n", time_64,
-           1.0e-9 * samples * size / time_64);
-    printf("#Time XorShift1024*: %e %e\n", time_1024,
-           1.0e-9 * samples * size / time_1024);
+    std::cout<<"Time 64: "<<time_64<<std::endl;
+    std::cout<<"Time 1024: "<<time_1024<<std::endl;
 
-    Kokkos::deep_copy(vals.h_view, vals.d_view);
+    //Kokkos::deep_copy(vals.h_view, vals.d_view);
   }
   Kokkos::finalize();
   return 0;

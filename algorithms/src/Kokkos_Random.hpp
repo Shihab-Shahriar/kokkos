@@ -863,6 +863,17 @@ class Random_XorShift64 {
     return U * std::sqrt(-2.0 * std::log(S) / S);
   }
 
+  // KOKKOS_INLINE_FUNCTION
+  // double normal() {
+  //   constexpr double M_PI2 = 2.0 * Kokkos::numbers::pi_v<double>;
+
+  //   double u = drand();
+  //   double v = drand();
+  //   double r = Kokkos::sqrt(-2.0 * Kokkos::log(u));
+  //   double theta = v * M_PI2;
+  //   return r * Kokkos::cos(theta);
+  // }
+
   KOKKOS_INLINE_FUNCTION
   double normal(const double& mean, const double& std_dev = 1.0) {
     return mean + normal() * std_dev;
@@ -1107,6 +1118,17 @@ class Random_XorShift1024 {
     }
     return U * std::sqrt(-2.0 * std::log(S) / S);
   }
+
+  // KOKKOS_INLINE_FUNCTION
+  // double normal() {
+  //   constexpr double M_PI2 = 2.0 * Kokkos::numbers::pi_v<double>;
+
+  //   double u = drand();
+  //   double v = drand();
+  //   double r = Kokkos::sqrt(-2.0 * Kokkos::log(u));
+  //   double theta = v * M_PI2;
+  //   return r * Kokkos::cos(theta);
+  // }
 
   KOKKOS_INLINE_FUNCTION
   double normal(const double& mean, const double& std_dev = 1.0) {
